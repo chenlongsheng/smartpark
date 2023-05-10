@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jeeplus.modules.homepage.dao.HomepageDao">
+
+    <select id="getTypeList" resultType="com.jeeplus.common.persistence.MapEntity">
+        select concat(dev_type, type_id)                    id
+             , name
+             , count(*)                                     allCount
+             , sum(case when online > 0 then 1 else 0 end)  onlineCount
+             , max(warn)                                    warn
+             , CONCAT('/static_modules/device/', icon_skin) iconSkin
+        from (select d.dev_type, d.type_id, tc.name, dd.online, max(r.warn) warn, tc.icon_skin
+              from t_device d
+                       inner join t_device_detail dd on dd.id = d.id
+                       inner join t_channel c on c.dev_id = d.id
+                       inner join t_real_data r on r.id = c.id
+                       left join t_code tc on tc.id = d.dev_type and tc.type_id = d.type_id
+              where d.dev_type in (168, 172)
+              GROUP BY d.id) m
+        GROUP BY dev_type
+    </select>
+
+    <select id="getDeviceNumList" resultType="com.jeeplus.common.persistence.MapEntity">
+        select CONCAT(d.id, d.type_id)                         id,
+               d.dev_type,
+               tc.name,
+               dd.online,
+               max(r.warn)                                     warn,
+               CONCAT('/static_modules/device/', tc.icon_skin) iconSkin,
+               DATE_FORMAT(r.real_time, '%Y-%m-%d %H:%i:%s') time
+        from
+            t_device d inner join t_device_detail dd
+        on dd.id = d.id
+            inner join t_channel c on c.dev_id = d.id
+            inner join t_real_data r on r.id = c.id
+            left join t_code tc on tc.id = d.dev_type and tc.type_id = d.type_id
+        where d.dev_type in (168, 172)
+        GROUP BY d.id
+        ORDER BY dev_type, dev_id
+    </select>
+
+</mapper>

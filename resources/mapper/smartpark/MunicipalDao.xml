@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jeeplus.modules.smartpark.dao.MunicipalDao">
+
+
+	<!-- 首页数据列表 -->
+	<select id="getDeviceListByApp" resultType="com.jeeplus.common.persistence.MapEntity">
+		select
+		concat(d.id) id,d.addr,d.name,dd.online, 0
+		warn, o.coords_x
+		coordsX,o.coords_y coordsY,d.org_id orgId,o.name orgName
+		from t_device d inner
+		join t_device_detail dd
+		on dd.id =d.id
+		left join t_org o on o.id = d.org_id
+		where dev_type = 240 and org_id = 474510807565078528 limit 15
+	</select>
+
+
+	<select id="getchannelByDevId" resultType="com.jeeplus.common.persistence.MapEntity">
+		select mac,
+		dev_id devId,c.id channelId,ch_type chType,type_id
+		typeId,name,c.ch_no chNo,0 realValue
+		from t_channel c left join
+		t_device_detail dd on dd.id = c.dev_id
+		where c.dev_id =
+		343597383896 and ch_type in (166,167,168)
+	</select>
+
+
+	<select id="getDevdetailByDevId" resultType="com.jeeplus.common.persistence.MapEntity">
+		select * from t_device d where id = 343597383896
+	</select>
+
+
+	<!-- 获取设备报警日志详情 -->
+	<select id="getAlarmLogs" resultType="com.jeeplus.common.persistence.MapEntity">
+		select
+		a.*
+		from t_alarm_log a
+		inner join t_channel c on c.id = a.id
+		inner join
+		t_device d on d.id = c.dev_id
+		LEFT JOIN t_org o on
+		d.org_id = o.id
+		LEFT JOIN pdf_org pr on pr.t_org_id = o.id
+		inner join
+		sys_user_bureau sys on sys.bureau_id =
+		pr.bureau_id
+		left join sys_user u on u.id = sys.user_id
+		where
+		a.occur_time &gt;=
+		DATE_FORMAT('2021-01-01','%Y-%m-%d')
+		and
+		a.occur_time &lt;= DATE_FORMAT('2022-06-01','%Y-%m-%d')
+		order by a.occur_time
+		DESC;
+	</select>
+
+
+</mapper>

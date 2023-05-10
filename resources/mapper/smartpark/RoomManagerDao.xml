@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.jeeplus.modules.smartpark.dao.RoomManagerDao">
+
+    <!-- 首页数据列表 -->
+    <select id="getRoomManagerList"
+            resultType="com.jeeplus.common.persistence.MapEntity">
+        select
+        sysMoney sumMoney,
+        count,
+        sysMoney,
+        onMoney,
+        s.type ,
+        concat( e.id ) id,
+        GROUP_CONCAT( mac ) mac,
+        dd.online,
+        sc.name customerName,
+        u.name bureauName,
+        sc.phone,
+        e.name,
+        IFNULL( p.balance, 0 ) balance,
+        (select sum(value) from t_elec_history_data
+        where FIND_IN_SET(org_id,GROUP_CONCAT( su.loop_org_id )) and value !=0 and time &gt; sc.create_date) allNumber,
+        DATE_FORMAT(e.create_date,'%Y-%m-%d %H:%i:%s') date,
+        DATE_FORMAT(p.arr_time,'%Y-%m-%d %H:%i:%s') arrTime,
+        IFNULL( w.first, '' ) first,
+        IFNULL( w.second, '' ) second,
+        IFNULL( w.third, '' ) third,
+        IFNULL( w.message_type, '' ) messageType
+        from
+        star_electricity_unit e
+        left join smart_customer sc on sc.electricity_unit_id = e.id and sc.del_flag = 1
+        left join smart_park_pay p on p.electricity_unit_id = e.id
+        left join (
+        SELECT
+        sum(if(p.type=2,1,0)) count,
+        p.type,
+        SUM( recharge_money ) sysMoney,
+        SUM(
+        if
+        ( is_online = 0, recharge_money, 0 )) onMoney,
+        park_pay_id
+        from
+        smart_park_pay_detail p
+        inner join smart_park_pay s on s.id = p.park_pay_id
+        inner join smart_customer sc on sc.electricity_unit_id = s.electricity_unit_id
+        where sc.del_flag =1 and p.create_date &gt; sc.create_date
+
+        GROUP BY
+        park_pay_id
+        ) s on p.id = s.park_pay_id
+        left join pdf_electricity_bureau u on u.id = e.bureau_id
+        left join star_unit_loop_org su on su.unit_id = e.id
+        left join t_channel c on c.logic_org_id = su.loop_org_id
+        left join t_device_detail dd on dd.id = c.dev_id
+        left join smart_elec_warning w on w.id = e.id
+        where
+        c.ch_type = 403
+        <if test="bureauId !=null and bureauId !=''">
+            and e.bureau_id = #{bureauId}
+        </if>
+        <if test="customerName !=null and customerName !=''">
+            and e.customer_name like concat('%',#{customerName},'%')
+        </if>
+
+        <if test="roomName !=null and roomName !=''">
+            and e.name like concat('%',#{roomName},'%')
+        </if>
+        <if test="phone !=null and phone !=''">
+            and sc.phone like CONCAT('%',#{phone},'%')
+        </if>
+        <if test="arrState !=null and arrState !=''">
+            and p.balance &lt; 0
+        </if>
+        group by e.id
+        <choose>
+            <when test="arrState !=null and arrState !=''">
+                order by p.arr_time desc
+            </when>
+            <otherwise>
+                order by e.create_date desc
+            </otherwise>
+        </choose>
+
+    </select>
+
+    <!-- 更新发送微信类型 -->
+    <update id="updateElecWarningByType">
+        insert into smart_elec_warning (id, message_type)
+        values (#{id}, #{messageType}) ON DUPLICATE KEY
+        UPDATE
+            message_type = #{messageType};
+    </update>
+
+    <!-- 1,2,3级余额报警 -->
+    <update id="updateElecWarningByWarn">
+        insert into smart_elec_warning ( id
+                                       , first, second, third)
+        values (#{id}, #{first}, #{second}, #{third}) ON
+		DUPLICATE KEY
+        UPDATE first = #{first} , second = #{second},third =
+            #{third}
+    </update>
+
+    <select id="getRechargeDetailList"
+            resultType="com.jeeplus.common.persistence.MapEntity">
+        select
+        n.*,
+        SUM( recharge_money ) sumrecharge,
+        count(*)- 1 count
+        from
+        (
+        select
+        concat( pd.id ) id,
+        pd.park_pay_id,
+        sc.name cusName,
+        e.name bureauName,
+        pd.`order_id`,
+        u.name roomName,
+        pd.recharge_money rechargeMoney,
+        DATE_FORMAT( pd.create_date, '%Y-%m-%d %H:%i:%s' ) date,
+        pd.create_date,
+        pd.is_success isSuccess,
+        GROUP_CONCAT( mac ) mac,
+        '0' rechargeStatus,
+        sc.customer_no,
+        sc.phone,
+        pd.is_online,
+        pd.type,
+        pd.remark
+        from
+        smart_park_pay_detail pd
+        inner join smart_park_pay p on p.id = pd.park_pay_id
+        inner join star_electricity_unit u on u.id = p.electricity_unit_id
+        left join smart_customer sc on sc.electricity_unit_id = u.id
+        inner join pdf_electricity_bureau e on e.id = u.bureau_id
+        left join star_unit_loop_org sl on sl.unit_id = u.id
+        inner join t_channel c on c.logic_org_id = sl.loop_org_id
+        inner join t_device_detail dd on dd.id = c.dev_id
+        where
+        c.ch_type = 403
+        <if test="bureauId !=null and bureauId !=''">
+            and e.id = #{bureauId}
+        </if>
+        <if test="customerName !=null and customerName !=''">
+            and sc.name like concat('%',#{customerName},'%')
+        </if>
+        <if test="roomName !=null and roomName !=''">
+            and u.name like concat('%',#{roomName},'%')
+        </if>
+        <if test="phone !=null and phone !=''">
+            and sc.phone like concat('%',#{phone},'%')
+        </if>
+        <if test="isOnline !=null and isOnline !=''">
+            and pd.is_online =#{isOnline}
+        </if>
+        <if test="rechargeStatus !=null and isOnline !='' and rechargeStatus >0">
+            and pd.is_online =0
+        </if>
+        <if test="rechargeStatus !=null and isOnline !='' and rechargeStatus =0">
+            and pd.is_online >0
+        </if>
+        <if test="type !=null and type !=''">
+            and pd.type = #{type}
+        </if>
+        <if test="beginTime !=null and beginTime !=''">
+            and pd.create_date &gt;= #{beginTime}
+        </if>
+        <if test="endTime !=null and endTime  !=''">
+            and pd.create_date &lt;= #{endTime}
+        </if>
+        GROUP BY pd.id
+        ) n
+        left join smart_park_pay_detail m on m.park_pay_id = n.park_pay_id
+        and n.create_date &gt;= m.create_date
+        GROUP BY n.id ORDER BY n.create_date desc
+    </select>
+
+
+    <update id="updatePayBalanceByUnitId">
+        update smart_park_pay
+        set balance = balance + #{money}
+        where electricity_unit_id = #{electricityUnitId};
+
+        insert into smart_park_pay_detail(id, park_pay_id, order_id, recharge_money, is_success, is_online, type,
+                                          remark, create_date)
+        VALUES (UUID_SHORT(), (select id from smart_park_pay where electricity_unit_id = #{electricityUnitId}), '',
+                #{money}, '1', #{isOnline}, #{type}, #{remark}, NOW());
+    </update>
+
+    <select id="getPasswordCount" resultType="java.lang.Integer">
+        select count(*) count
+        from star_electricity_unit eu left join
+            pdf_electricity_bureau pb
+        on eu.bureau_id = pb.id
+        where eu.id = #{electricityUnitId}
+          and password = #{password}
+    </select>
+
+</mapper>

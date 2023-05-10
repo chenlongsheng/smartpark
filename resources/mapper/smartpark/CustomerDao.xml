@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jeeplus.modules.smartpark.dao.CustomerDao">
+
+    <select id="getCustomerList" resultType="com.jeeplus.common.persistence.MapEntity">
+        select c.id,
+        customer_no customerNo,
+        electricity_unit_id electricityUnitId,
+        CONCAT(u.bureau_id) bureauId,
+        CONCAT(u.floor_id) floorId,
+        CONCAT(u.org_id) pdfId,
+        c.name,
+        c.phone,
+        c.addr,
+        DATE_FORMAT(c.create_date,'%Y-%m-%d %H:%i:%s') createDate,
+        IFNULL(DATE_FORMAT(c.cancel_date,'%Y-%m-%d %H:%i:%s') ,'') cancelDate,
+        c.remark,
+        c.del_flag delFlag,
+        u.name electricityName,
+        eu.name bureauName,
+        su.name createUser
+        from smart_customer c
+        left join star_electricity_unit u on u.id = c.electricity_unit_id
+        left join pdf_electricity_bureau eu on eu.id = u.bureau_id
+        left join sys_user su on su.id = c.create_user
+        <where>
+            <if test="customerName !=null and customerName !=''">
+                and c.name like concat('%',#{customerName},'%')
+            </if>
+            <if test="bureauId !=null and bureauId !=''">
+                and u.bureau_id =#{bureauId}
+            </if>
+            <if test="phone !=null and phone !=''">
+                and c.phone like concat('%',#{phone},'%')
+            </if>
+            <if test="electricityUnitName !=null and electricityUnitName !=''">
+                and u.name like concat('%',#{electricityUnitName},'%')
+            </if>
+            <if test="beginTime !=null and beginTime !=''">
+                and c.create_date &gt;= #{beginTime}
+            </if>
+            <if test="endTime !=null and endTime  !=''">
+                and c.create_date &lt;= #{endTime}
+            </if>
+            <if test="cannelBeginTime !=null and cannelBeginTime !=''">
+                and c.cancel_date &gt;= #{cannelBeginTime}
+            </if>
+            <if test="cannelEndTime !=null and cannelEndTime  !=''">
+                and c.cancel_date &lt;= #{cannelEndTime}
+            </if>
+        </where>
+        order by c.create_date desc
+    </select>
+
+    <select id="getCustomerById" resultType="java.lang.Integer">
+        select count(*) c
+        from smart_customer
+        where electricity_unit_id = #{unitId}
+          and del_flag = 1
+    </select>
+    <insert id="insertCustomer">
+        <selectKey keyProperty="customerNo" order="BEFORE" resultType="java.lang.String">
+            select
+            case when customer_no is null then CONCAT(#{electricityUnitId},'0001') else
+            CONCAT(#{electricityUnitId}, LPAD(max(right (customer_no, 4)) + 1, 4, 0)) end
+            customerNo
+            from smart_customer
+            where LENGTH(customer_no) >= 4 and LEFT (customer_no,2) = #{electricityUnitId}
+        </selectKey>
+        insert into smart_customer(customer_no,
+        electricity_unit_id,
+        name,
+        phone,
+        addr,
+        create_user,
+        create_date,
+        remark)
+        values (#{customerNo}, #{electricityUnitId}, #{name}, #{phone}, #{addr}, #{createUser}, NOW(), #{remark})
+    </insert>
+
+    <update id="updateCustomerById">
+        update smart_customer
+        set customer_no=#{customerNo},
+            electricity_unit_id= #{electricityUnitId},
+            name=#{name},
+            phone = #{phone},
+            addr= #{addr},
+            remark=#{remark}
+        where id = #{id}
+    </update>
+
+
+    <delete id="deleteCustomerById">
+        update smart_customer
+        set del_flag    = 0,
+            cancel_date = now()
+        where id = #{id}
+    </delete>
+
+    <update id="insertHistorytimeByunitId">
+        REPLACE
+        into t_history_time
+        SELECT c.id                                    id,
+               DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s') last_date
+        from star_unit_loop_org u
+                 inner join t_channel c on c.logic_org_id = u.loop_org_id
+        where unit_id = #{unitId}
+          and c.ch_type = 403
+    </update>
+
+
+</mapper>

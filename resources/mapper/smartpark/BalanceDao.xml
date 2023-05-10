@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jeeplus.modules.smartpark.dao.BalanceDao">
+
+
+    <!-- 首页数据列表 -->
+    <select id="homepages" resultType="com.jeeplus.common.persistence.MapEntity">
+
+        select (select IFNULL(SUM(balance), 0)
+                from smart_park_pay k
+                         inner join
+                     star_electricity_unit u on u.phone = k.electricity_unit_id
+                where balance &lt; 0
+                  and u.bureau_id = #{bureauId}) balance,
+
+               (select count(*)
+                from star_electricity_unit
+                where bureau_id = #{bureauId})   roomCount,
+
+               sum(
+                       case
+                           when online = 0 then 1
+                           else 0 end
+                   )                             notOnline,
+               sum(
+                       case when online &gt; 0 then 1 else 0 end
+                   )                             online,
+               sum(
+                       case
+                           when online = 0 then 1
+                           else 0 end
+                   )                             breakPower
+
+        from t_device d
+                 inner join t_device_detail dd on dd.id = d.id
+                 inner join
+             t_org o on o.id = d.org_id
+                 inner join pdf_org p on p.t_org_id = o.id
+        where dev_type = 240
+          and p.bureau_id = #{bureauId}
+    </select>
+
+
+    <select id="elecNum" resultType="com.jeeplus.common.persistence.MapEntity">
+        select
+        IFNULL(ROUND(sum(n.history_value-ni.history_value),2),0) value
+        from
+        (select ch_id,
+        MAX(history_time)
+        maxtime,MIN(history_time) mintime
+        from t_channel c
+        inner join
+        t_history_data_final h on h.ch_id = c.id
+        left join t_device
+        d on d.id = c.dev_id
+        left join pdf_org o on o.t_org_id = d.org_id
+
+        where
+        <if test="state ==0">
+            history_time &gt;= CURDATE() and history_time &lt; now()
+        </if>
+        <if test="state ==1">
+            history_time &gt;= DATE_SUB(CURDATE(),INTERVAL 1 day) and history_time &lt;= CURDATE()
+        </if>
+
+        and c.ch_type = 403 and o.bureau_id = #{bureauId}
+        group by ch_id) m
+        left join
+        t_history_data_final n on n.ch_id = m.ch_id
+        and m.maxtime =
+        n.history_time
+        left join
+        t_history_data_final ni on n.ch_id
+        = ni.ch_id and m.mintime = ni.history_time
+    </select>
+
+
+    <select id="balancesByCustomer" resultType="com.jeeplus.common.persistence.MapEntity">
+
+        select balance,
+               s.id,
+               u.name,
+               phone,
+               customer_name customerName,
+               pb.name
+                             bureauName
+        from smart_park_pay s
+                 inner join star_electricity_unit u on u.id = s.electricity_unit_id
+                 left join
+             pdf_electricity_bureau pb on pb.id = u.bureau_id
+        where phone = #{phone}
+    </select>
+
+    <select id="balanceDetailByCustomer" resultType="com.jeeplus.common.persistence.MapEntity">
+
+        select recharge_money recharge, MONTH (create_date)
+            mon, DATE_FORMAT(create_date, '%Y-%m-%d %H:%i:%s') date
+        from smart_park_pay_detail p
+            inner join smart_park_pay s
+        on s.id =
+            p.park_pay_id
+        where s.id = #{payId}
+        order by create_date desc
+    </select>
+
+
+    <!-- 五分钟轮询查电费 -->
+    <!-- <select id="getElecNumByMinute" resultType="com.jeeplus.common.persistence.MapEntity">
+         select *,
+                GROUP_CONCAT(chId)                   chIds,
+                sum(price * value)                   chargeMoney,
+                concat(balance - sum(price * value)) balanceCut
+
+         from (select p.*,
+                      w.first,
+                      w.second,
+                      w.third,
+                      w.message_type,
+                      u.loop_org_id,
+                      e.phone,
+                      e.open_id
+               from smart_park_pay p
+                        inner join
+                    star_electricity_unit e on e.id = p.electricity_unit_id
+                        inner join star_unit_loop_org u on u.unit_id = e.id
+                        left join
+                    smart_elec_warning w on w.id = e.id) a
+
+                  inner join
+
+              (SELECT (select ep.price
+                       from star_energy_charge e
+                                inner join star_energy_charge_price ep on e.charge_price_id = ep.id
+                       where start_time
+                           &lt;= minHour
+                         and end_time &gt; minHour limit 1) price,
+
+              loopOrgId,
+              a.ch_id chId,
+              b.history_value maxval,
+              c.history_value minval,
+              DATE_FORMAT(maxtime, '%Y-%m-%d %H:%i:%s') maxtime,
+              DATE_FORMAT(mintime, '%Y-%m-%d %H:%i:%s') mintime,
+              minHour,
+              maxHour,
+             ROUND(b.history_value - c.history_value, 3) value
+         FROM
+             (
+             SELECT
+             ch_id,
+             loopOrgId,
+             maxtime,
+             CASE WHEN last_date IS NULL THEN mintime ELSE last_date END mintime,
+             minHour,
+             maxHour
+             FROM
+             (
+             SELECT
+             ch_id,
+             MAX (history_time) maxtime,
+             min (history_time) mintime,
+             c.logic_org_id loopOrgId,
+             DATE_FORMAT(
+             MAX (history_time),
+             '%H:%i:%s'
+             ) maxHour,
+             DATE_FORMAT(
+             min (history_time), '%H:%i:%s')
+             minHour
+             FROM
+             t_channel c
+             INNER JOIN
+             t_history_data_final h ON h.ch_id = c.id
+             WHERE
+             history_time &gt;= DATE_SUB(now(), INTERVAL 5000000 MINUTE)
+             AND
+             history_time &lt;= now()
+             AND c.ch_type = 403
+             GROUP BY
+             ch_id
+             ) h
+             LEFT JOIN t_history_time t ON t.id = h.ch_id
+             ) a
+             INNER JOIN
+             t_history_data_final b
+         ON a.ch_id = b.ch_id
+             AND a.maxtime = b.history_time
+             INNER JOIN t_history_data_final c ON a.ch_id
+             = c.ch_id
+             AND a.mintime = c.history_time
+         order by (b.history_value - c.history_value)
+             ) b
+         on a.loop_org_id = b.loopOrgId
+         GROUP BY a.id
+     </select>-->
+
+
+    <select id="getElecNumByMinute" resultType="com.jeeplus.common.persistence.MapEntity">
+        select *,
+        GROUP_CONCAT(chId) chIds,
+        sum(price* sumValue) chargeMoney,
+        concat(balance - sum(price* sumValue)) balanceCut
+        from
+        (select p.*,
+        w.first,
+        w.second,
+        w.third,
+        w.message_type,u.loop_org_id,e.phone,e.open_id
+        from smart_park_pay p
+        inner join
+        star_electricity_unit e on e.id = p.electricity_unit_id
+        inner join star_unit_loop_org u on u.unit_id = e.id
+        left join
+        smart_elec_warning w on w.id = e.id
+        ) a
+        inner join
+        (
+        SELECT
+        ch_id chId,
+        MAX( time ) maxtime,
+        min( time ) mintime,
+        SUM( VALUE ) sumValue,
+        c.logic_org_id loopOrgId,
+        (
+            SELECT
+                ep.price
+            FROM
+                star_energy_charge e
+                    INNER JOIN star_energy_charge_price ep ON e.charge_price_id = ep.id
+            WHERE
+                start_time &lt;= DATE_FORMAT( min( time ), '%H:%i:%s' ) AND end_time &gt; DATE_FORMAT( min( time ), '%H:%i:%s' )
+            LIMIT 1
+        ) price,
+        DATE_FORMAT( MAX( time ), '%H:%i:%s' ) maxHour,
+        DATE_FORMAT( min( time ), '%H:%i:%s' ) minHour
+        FROM
+        t_channel c
+        INNER JOIN t_elec_history_data h ON h.ch_id = c.id
+        LEFT JOIN t_history_time t ON t.id = h.ch_id
+        WHERE
+        time &gt; last_date
+        AND time &lt;= now()
+        GROUP BY   ch_id
+        ) b on a.loop_org_id = b.loopOrgId
+        GROUP BY a.id
+    </select>
+
+
+    <update id="deleteHisTime">
+        delete
+        from t_history_time
+    </update>
+
+    <update id="updateHisTime">
+        replace into t_history_time(id,last_date) values(#{chId},#{maxtime}) ;
+        <!-- 		update t_history_time set last_date = #{maxtime} where id = #{chId}; -->
+    </update>
+
+    <update id="updateParkPay">
+        update smart_park_pay
+        set balance =#{balance}
+        where electricity_unit_id = #{electricityUnitId};
+    </update>
+
+</mapper>
